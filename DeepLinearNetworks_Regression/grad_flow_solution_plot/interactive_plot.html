@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gradient Flow Solution Explorer</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<script>
+  window.MathJax = {
+    tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+    svg: { fontCache: 'global' }
+  };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #f5f5f5;
+    color: #222;
+    padding: 20px;
+  }
+  h1 { font-size: 1.4em; margin-bottom: 4px; }
+  .subtitle { font-size: 0.95em; color: #555; margin-bottom: 16px; }
+  .container { max-width: 1100px; margin: 0 auto; }
+  .controls {
+    background: #fff;
+    border-radius: 8px;
+    padding: 18px 24px;
+    margin-bottom: 14px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 12px;
+  }
+  .slider-row label { font-weight: 600; min-width: 50px; }
+  .slider-row input[type=range] { flex: 1; }
+  .slider-val {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 1.05em;
+    min-width: 90px;
+    text-align: right;
+  }
+  .toggle-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    align-items: center;
+  }
+  .toggle-row label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+    font-size: 0.92em;
+  }
+  .info {
+    font-size: 0.85em;
+    color: #666;
+    margin-top: 8px;
+    line-height: 1.5;
+  }
+  .info code {
+    background: #eee;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 0.95em;
+  }
+  #plot {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Gradient Flow Solution Explorer</h1>
+  <p class="subtitle">
+    $g(z) = z\,\operatorname{arcsinh}(z/2) - \sqrt{4 + z^2} + 2$, &emsp;
+    with $z = x / \alpha^2$
+  </p>
+
+  <div class="controls">
+    <div class="slider-row">
+      <label>$\alpha$:</label>
+      <input type="range" id="alphaSlider" min="-12" max="4" step="0.01" value="0">
+      <span class="slider-val" id="alphaVal"></span>
+    </div>
+    <div class="toggle-row">
+      <label><input type="checkbox" id="showRaw" checked>
+        <span style="color:#1f77b4;font-weight:600">$g(x/\alpha^2)$</span> raw curve</label>
+      <label><input type="checkbox" id="showSmall" checked>
+        <span style="color:#d62728;font-weight:600">Rescaled $\to |x|$</span>
+        &nbsp;$\bigl(-\frac{\alpha^2}{2\log\alpha}\bigr) \cdot g$</label>
+      <label><input type="checkbox" id="showLarge" checked>
+        <span style="color:#2ca02c;font-weight:600">Rescaled $\to x^2$</span>
+        &nbsp;$4\alpha^4 \cdot g$</label>
+      <label><input type="checkbox" id="showAbsX" checked>
+        <span style="color:#d62728;font-weight:600;opacity:0.5">$|x|$</span> limit</label>
+      <label><input type="checkbox" id="showX2" checked>
+        <span style="color:#2ca02c;font-weight:600;opacity:0.5">$x^2$</span> limit</label>
+    </div>
+    <div class="info">
+      <strong>Asymptotics:</strong>
+      $\alpha \to 0$: rescale by $-\alpha^2/(2\log\alpha) \;\to\; |x|$ &emsp;|&emsp;
+      $\alpha \to \infty$: rescale by $4\alpha^4 \;\to\; x^2$
+    </div>
+  </div>
+
+  <div id="plot"></div>
+</div>
+
+<script>
+// ---------- math ----------
+const N = 801;
+const xArr = Array.from({length: N}, (_, i) => -1 + 2 * i / (N - 1));
+const absX = xArr.map(x => Math.abs(x));
+const x2   = xArr.map(x => x * x);
+
+function g(z) {
+  // g is even, so use |z| to avoid numerical issues with arcsinh for large negative args
+  const az = Math.abs(z);
+  return az * Math.asinh(az / 2) - Math.sqrt(4 + az * az) + 2;
+}
+
+function computeCurves(alpha) {
+  const a2 = alpha * alpha;
+  const raw = xArr.map(x => g(x / a2));
+
+  // Small-alpha rescaling: -alpha^2 / (2 log alpha)
+  const logA = Math.log(alpha);
+  const scaleSmall = (alpha > 0 && alpha < 1) ? -a2 / (2 * logA) : NaN;
+  const rescaledSmall = raw.map(y => y * scaleSmall);
+
+  // Large-alpha rescaling: 4 alpha^4
+  const scaleLarge = 4 * a2 * a2;
+  const rescaledLarge = raw.map(y => y * scaleLarge);
+
+  return { raw, rescaledSmall, rescaledLarge, scaleSmall, scaleLarge };
+}
+
+// ---------- initial plot ----------
+const alpha0 = 1.0;
+const c0 = computeCurves(alpha0);
+
+const traceRaw = {
+  x: xArr, y: c0.raw, mode: 'lines',
+  name: '$g(x/\\alpha^2)$',
+  line: {color: '#1f77b4', width: 2.5}
+};
+const traceSmall = {
+  x: xArr, y: c0.rescaledSmall, mode: 'lines',
+  name: '$-\\frac{\\alpha^2}{2\\log\\alpha}\\cdot g$',
+  line: {color: '#d62728', width: 2.5}
+};
+const traceLarge = {
+  x: xArr, y: c0.rescaledLarge, mode: 'lines',
+  name: '$4\\alpha^4 \\cdot g$',
+  line: {color: '#2ca02c', width: 2.5}
+};
+const traceAbsX = {
+  x: xArr, y: absX, mode: 'lines',
+  name: '$|x|$',
+  line: {color: '#d62728', width: 1.5, dash: 'dash'}
+};
+const traceX2 = {
+  x: xArr, y: x2, mode: 'lines',
+  name: '$x^2$',
+  line: {color: '#2ca02c', width: 1.5, dash: 'dash'}
+};
+
+const layout = {
+  margin: {t: 30, r: 30, b: 50, l: 60},
+  height: 520,
+  xaxis: {title: '$x$', range: [-1.05, 1.05]},
+  yaxis: {title: '', range: [-0.05, 1.3]},
+  legend: {x: 0.02, y: 0.98, bgcolor: 'rgba(255,255,255,0.85)'},
+  hovermode: 'x unified'
+};
+
+Plotly.newPlot('plot',
+  [traceRaw, traceSmall, traceLarge, traceAbsX, traceX2],
+  layout, {responsive: true}
+);
+
+// ---------- updates ----------
+const slider   = document.getElementById('alphaSlider');
+const alphaVal = document.getElementById('alphaVal');
+const cbRaw    = document.getElementById('showRaw');
+const cbSmall  = document.getElementById('showSmall');
+const cbLarge  = document.getElementById('showLarge');
+const cbAbsX   = document.getElementById('showAbsX');
+const cbX2     = document.getElementById('showX2');
+
+function update() {
+  const logAlpha = parseFloat(slider.value);
+  const alpha = Math.exp(logAlpha);
+  alphaVal.textContent = '\u03b1 = ' + alpha.toPrecision(4);
+
+  const c = computeCurves(alpha);
+
+  // Compute a good y-axis range
+  let ymax = 1.1;
+  if (cbRaw.checked)   ymax = Math.max(ymax, ...c.raw.filter(isFinite));
+  if (cbSmall.checked && !isNaN(c.scaleSmall)) ymax = Math.max(ymax, ...c.rescaledSmall.filter(isFinite));
+  if (cbLarge.checked) ymax = Math.max(ymax, ...c.rescaledLarge.filter(isFinite));
+  ymax = Math.min(ymax, 50);  // clamp
+
+  const dataUpdate = {
+    y: [c.raw, c.rescaledSmall, c.rescaledLarge, absX, x2],
+    visible: [
+      cbRaw.checked   ? true : 'legendonly',
+      cbSmall.checked ? true : 'legendonly',
+      cbLarge.checked ? true : 'legendonly',
+      cbAbsX.checked  ? true : 'legendonly',
+      cbX2.checked    ? true : 'legendonly',
+    ]
+  };
+  const layoutUpdate = {'yaxis.range': [-0.05 * ymax, ymax * 1.05]};
+
+  Plotly.update('plot', dataUpdate, layoutUpdate, [0, 1, 2, 3, 4]);
+}
+
+slider.addEventListener('input', update);
+[cbRaw, cbSmall, cbLarge, cbAbsX, cbX2].forEach(cb => cb.addEventListener('change', update));
+
+// trigger initial render with correct visibility
+update();
+</script>
+</body>
+</html>

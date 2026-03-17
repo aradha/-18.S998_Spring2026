@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dual Activation Iterator</title>
+<style>
+  /* ── reset & base ──────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #f5f5f0;
+    --surface:  #ffffff;
+    --border:   #d4d4cd;
+    --text:     #2c2c2c;
+    --text-dim: #7a7a72;
+    --accent:   #4a6fa5;
+    --accent2:  #c0392b;
+    --accent3:  #27ae60;
+    --grid:     #e8e8e2;
+    --curve:    #4a6fa5;
+    --diag:     #b0b0a8;
+    --cobweb:   #c0392b;
+    --dot:      #c0392b;
+    --dot-start:#e67e22;
+    --font:     'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --mono:     'SF Mono', 'Fira Code', 'Consolas', monospace;
+  }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem;
+  }
+
+  /* ── layout ────────────────────────────────────────────────────── */
+  h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.25rem;
+  }
+  .subtitle {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    margin-bottom: 1.5rem;
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  .app {
+    display: flex;
+    gap: 2rem;
+    max-width: 1100px;
+    width: 100%;
+    align-items: flex-start;
+  }
+
+  /* ── sidebar ───────────────────────────────────────────────────── */
+  .sidebar {
+    width: 280px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem;
+  }
+  .card h2 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin-bottom: 1rem;
+    font-weight: 600;
+  }
+
+  .coeff-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 0.7rem;
+  }
+  .coeff-row label {
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    width: 2rem;
+    flex-shrink: 0;
+    color: var(--text-dim);
+  }
+  .coeff-row input[type="range"] {
+    flex: 1;
+    accent-color: var(--accent);
+    height: 4px;
+  }
+  .coeff-row .val {
+    font-family: var(--mono);
+    font-size: 0.78rem;
+    width: 3.2rem;
+    text-align: right;
+    color: var(--text);
+  }
+
+  .formula-display {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    line-height: 1.7;
+    color: var(--text-dim);
+    background: var(--bg);
+    border-radius: 6px;
+    padding: 0.75rem;
+    word-break: break-all;
+  }
+  .formula-display .coeff-val {
+    color: var(--accent);
+    font-weight: 600;
+  }
+
+  /* ── iteration controls ────────────────────────────────────────── */
+  .iter-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+  .btn-row {
+    display: flex;
+    gap: 0.5rem;
+  }
+  button {
+    font-family: var(--font);
+    font-size: 0.82rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.5rem 0.9rem;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  button:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  button.primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  button.primary:hover {
+    background: #3d5f8f;
+  }
+  button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  button:disabled:hover {
+    border-color: var(--border);
+    color: var(--text);
+  }
+
+  .info-text {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+
+  .iterate-val {
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    color: var(--accent2);
+    padding: 0.4rem 0;
+  }
+
+  /* ── canvas area ───────────────────────────────────────────────── */
+  .canvas-wrap {
+    flex: 1;
+    min-width: 0;
+  }
+  .canvas-container {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem;
+    position: relative;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    cursor: crosshair;
+    border-radius: 6px;
+  }
+  .canvas-hint {
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    margin-top: 0.6rem;
+  }
+
+  /* ── responsive ────────────────────────────────────────────────── */
+  @media (max-width: 800px) {
+    .app { flex-direction: column; }
+    .sidebar { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Dual Activation Iterator</h1>
+<p class="subtitle">
+  φ&#770;(ρ) = Σ a<sub>i</sub><sup>2</sup> ρ<sup>i</sup> &nbsp;with&nbsp; φ&#770;(1)&nbsp;=&nbsp;1 &nbsp;&mdash;&nbsp;
+  click the curve to drop a point, then step through iterations
+</p>
+
+<div class="app">
+
+  <!-- ── Sidebar ──────────────────────────────────────────────── -->
+  <div class="sidebar">
+
+    <div class="card">
+      <h2>Coefficients a<sub>i</sub></h2>
+      <div id="sliders"></div>
+      <div id="formula" class="formula-display"></div>
+    </div>
+
+    <div class="card">
+      <h2>Iteration</h2>
+      <div class="iter-controls">
+        <p class="info-text" id="status-text">Click on the plot to drop a starting point on [0, 1].</p>
+        <div class="iterate-val" id="iterate-val"></div>
+        <div class="btn-row">
+          <button id="btn-step" class="primary" disabled>Step +1</button>
+          <button id="btn-step5" disabled>Step +5</button>
+          <button id="btn-reset" disabled>Reset</button>
+        </div>
+        <div class="btn-row">
+          <button id="btn-animate" disabled>Animate</button>
+          <button id="btn-stop" disabled>Stop</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Presets</h2>
+      <div class="btn-row" style="flex-wrap:wrap; gap:0.4rem">
+        <button class="preset-btn" data-a="[0, 1, 0, 0, 0, 0]">Linear</button>
+        <button class="preset-btn" data-a="[0, 0.5, 0.8, 0, 0, 0]">Quadratic</button>
+        <button class="preset-btn" data-a="[0.3, 0.6, 0.4, 0.3, 0, 0]">Cubic-ish</button>
+        <button class="preset-btn" data-a="[0.5, 0.2, 0.3, 0.4, 0.5, 0.3]">Full</button>
+        <button class="preset-btn" data-a="[1, 0, 0, 0, 0, 0]">Constant</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Plot ─────────────────────────────────────────────────── -->
+  <div class="canvas-wrap">
+    <div class="canvas-container">
+      <canvas id="plot" width="700" height="700"></canvas>
+      <p class="canvas-hint">Click anywhere on the plot to place a point &middot; Use Step to iterate φ&#770;</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// State
+// ═══════════════════════════════════════════════════════════════════
+const K = 6; // a0 … a5
+let rawA = [0, 1, 0, 0, 0, 0]; // initial: identity
+let coeffsSq = [];               // normalized a_i^2 / sum
+let curveRho = [];
+let curvePhi = [];
+let droppedRho = null;
+let iterates = [];               // [rho0, phi(rho0), phi^2(rho0), ...]
+let cobweb = [];                 // [{x,y}, …]
+let currentStep = 0;
+let animId = null;
+
+// ═══════════════════════════════════════════════════════════════════
+// DOM refs
+// ═══════════════════════════════════════════════════════════════════
+const canvas  = document.getElementById('plot');
+const ctx     = canvas.getContext('2d');
+const slidersDiv  = document.getElementById('sliders');
+const formulaDiv  = document.getElementById('formula');
+const statusText  = document.getElementById('status-text');
+const iterateVal  = document.getElementById('iterate-val');
+const btnStep     = document.getElementById('btn-step');
+const btnStep5    = document.getElementById('btn-step5');
+const btnReset    = document.getElementById('btn-reset');
+const btnAnimate  = document.getElementById('btn-animate');
+const btnStop     = document.getElementById('btn-stop');
+
+// ═══════════════════════════════════════════════════════════════════
+// Build sliders
+// ═══════════════════════════════════════════════════════════════════
+for (let i = 0; i < K; i++) {
+  const row = document.createElement('div');
+  row.className = 'coeff-row';
+  row.innerHTML = `
+    <label>a<sub>${i}</sub></label>
+    <input type="range" min="-2" max="2" step="0.01" value="${rawA[i]}" id="slider-${i}">
+    <span class="val" id="val-${i}">${rawA[i].toFixed(2)}</span>
+  `;
+  slidersDiv.appendChild(row);
+  document.getElementById(`slider-${i}`).addEventListener('input', (e) => {
+    rawA[i] = parseFloat(e.target.value);
+    document.getElementById(`val-${i}`).textContent = rawA[i].toFixed(2);
+    onCoeffsChanged();
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Math (client-side for responsiveness, backend available too)
+// ═══════════════════════════════════════════════════════════════════
+function normalize(raw) {
+  const sq = raw.map(a => a * a);
+  let s = sq.reduce((a, b) => a + b, 0);
+  if (s < 1e-15) { sq[1] = 1; s = 1; }
+  return sq.map(c => c / s);
+}
+
+function evalPhi(rho, csq) {
+  let v = 0;
+  for (let i = 0; i < csq.length; i++) v += csq[i] * Math.pow(rho, i);
+  return v;
+}
+
+function buildCurve(csq, n = 500) {
+  const rhos = [], phis = [];
+  for (let j = 0; j <= n; j++) {
+    const r = j / n;
+    rhos.push(r);
+    phis.push(evalPhi(r, csq));
+  }
+  return { rhos, phis };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Drawing
+// ═══════════════════════════════════════════════════════════════════
+const PAD = 52;
+
+function toCanvas(vx, vy) {
+  const w = canvas.width - 2 * PAD;
+  const h = canvas.height - 2 * PAD;
+  return [PAD + vx * w, canvas.height - PAD - vy * h];
+}
+function fromCanvas(cx, cy) {
+  const w = canvas.width - 2 * PAD;
+  const h = canvas.height - 2 * PAD;
+  return [(cx - PAD) / w, (canvas.height - PAD - cy) / h];
+}
+
+function draw() {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  // background
+  ctx.fillStyle = '#fafaf7';
+  ctx.fillRect(0, 0, W, H);
+
+  // grid
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--grid');
+  ctx.lineWidth = 1;
+  for (let t = 0; t <= 1.0; t += 0.1) {
+    const [x0, y0] = toCanvas(t, 0);
+    const [x1, y1] = toCanvas(t, 1);
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    const [gx0, gy0] = toCanvas(0, t);
+    const [gx1, gy1] = toCanvas(1, t);
+    ctx.beginPath(); ctx.moveTo(gx0, gy0); ctx.lineTo(gx1, gy1); ctx.stroke();
+  }
+
+  // axis labels
+  ctx.fillStyle = '#999';
+  ctx.font = '11px Inter, sans-serif';
+  ctx.textAlign = 'center';
+  for (let t = 0; t <= 1.0; t += 0.2) {
+    const [x, y] = toCanvas(t, 0);
+    ctx.fillText(t.toFixed(1), x, y + 16);
+    const [lx, ly] = toCanvas(0, t);
+    ctx.textAlign = 'right';
+    ctx.fillText(t.toFixed(1), lx - 8, ly + 4);
+    ctx.textAlign = 'center';
+  }
+
+  // axis titles
+  ctx.fillStyle = '#888';
+  ctx.font = '12px Inter, sans-serif';
+  ctx.textAlign = 'center';
+  const [bx, by] = toCanvas(0.5, 0);
+  ctx.fillText('ρ', bx, by + 36);
+  ctx.save();
+  const [ly2x, ly2y] = toCanvas(0, 0.5);
+  ctx.translate(ly2x - 36, ly2y);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillText('φ\u0302(ρ)', 0, 0);
+  ctx.restore();
+
+  // y = x diagonal
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--diag');
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath();
+  const [d0x, d0y] = toCanvas(0, 0);
+  const [d1x, d1y] = toCanvas(1, 1);
+  ctx.moveTo(d0x, d0y); ctx.lineTo(d1x, d1y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // curve φ̂(ρ)
+  if (curveRho.length > 0) {
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--curve');
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    for (let j = 0; j < curveRho.length; j++) {
+      const [px, py] = toCanvas(curveRho[j], curvePhi[j]);
+      j === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  }
+
+  // cobweb
+  if (cobweb.length > 0 && currentStep > 0) {
+    const visibleSegments = Math.min(currentStep * 2, cobweb.length);
+    ctx.strokeStyle = 'rgba(192, 57, 43, 0.55)';
+    ctx.lineWidth = 1.5;
+
+    // draw from dropped point
+    let startX = droppedRho, startY = droppedRho; // start from diagonal
+    ctx.beginPath();
+    const [sx, sy] = toCanvas(droppedRho, droppedRho);
+    ctx.moveTo(sx, sy);
+    for (let j = 0; j < visibleSegments; j++) {
+      const [px, py] = toCanvas(cobweb[j].x, cobweb[j].y);
+      ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+
+    // draw dots at iterate positions on the curve
+    for (let j = 0; j < visibleSegments; j += 2) {
+      const [dx, dy] = toCanvas(cobweb[j].x, cobweb[j].y);
+      ctx.beginPath();
+      ctx.arc(dx, dy, 4, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(192, 57, 43, 0.7)';
+      ctx.fill();
+    }
+
+    // current position dot (large)
+    if (visibleSegments > 0) {
+      const last = cobweb[visibleSegments - 1];
+      const [lx, ly] = toCanvas(last.x, last.y);
+      ctx.beginPath();
+      ctx.arc(lx, ly, 7, 0, Math.PI * 2);
+      ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--dot');
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
+
+  // starting point
+  if (droppedRho !== null && currentStep === 0) {
+    const phiVal = evalPhi(droppedRho, coeffsSq);
+    const [px, py] = toCanvas(droppedRho, phiVal);
+    ctx.beginPath();
+    ctx.arc(px, py, 7, 0, Math.PI * 2);
+    ctx.fillStyle = '#e67e22';
+    ctx.fill();
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+
+  // fixed points markers (where curve crosses diagonal)
+  ctx.fillStyle = 'rgba(39, 174, 96, 0.6)';
+  for (let j = 1; j < curveRho.length; j++) {
+    const diff0 = curvePhi[j - 1] - curveRho[j - 1];
+    const diff1 = curvePhi[j] - curveRho[j];
+    if (diff0 * diff1 < 0) {
+      // linear interpolation
+      const t = diff0 / (diff0 - diff1);
+      const rx = curveRho[j - 1] + t * (curveRho[j] - curveRho[j - 1]);
+      const [fx, fy] = toCanvas(rx, rx);
+      ctx.beginPath();
+      ctx.arc(fx, fy, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  // always mark ρ=1 fixed point
+  const [f1x, f1y] = toCanvas(1, 1);
+  ctx.beginPath();
+  ctx.arc(f1x, f1y, 5, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Update logic
+// ═══════════════════════════════════════════════════════════════════
+function onCoeffsChanged() {
+  coeffsSq = normalize(rawA);
+  const c = buildCurve(coeffsSq);
+  curveRho = c.rhos;
+  curvePhi = c.phis;
+  updateFormula();
+
+  // recompute cobweb if point exists
+  if (droppedRho !== null) {
+    recomputeCobweb();
+  }
+  draw();
+}
+
+function updateFormula() {
+  let parts = [];
+  for (let i = 0; i < K; i++) {
+    if (coeffsSq[i] > 1e-6) {
+      parts.push(`<span class="coeff-val">${coeffsSq[i].toFixed(4)}</span>·ρ<sup>${i}</sup>`);
+    }
+  }
+  formulaDiv.innerHTML = 'φ&#770;(ρ) = ' + (parts.length ? parts.join(' + ') : '0');
+}
+
+function recomputeCobweb() {
+  cobweb = [];
+  iterates = [droppedRho];
+  let rho = droppedRho;
+  const maxSteps = 200;
+  for (let s = 0; s < maxSteps; s++) {
+    const phi = evalPhi(rho, coeffsSq);
+    cobweb.push({ x: rho, y: phi });
+    cobweb.push({ x: phi, y: phi });
+    rho = phi;
+    iterates.push(rho);
+  }
+}
+
+function updateButtons() {
+  const hasPoint = droppedRho !== null;
+  btnStep.disabled = !hasPoint;
+  btnStep5.disabled = !hasPoint;
+  btnReset.disabled = !hasPoint;
+  btnAnimate.disabled = !hasPoint;
+  btnStop.disabled = animId === null;
+}
+
+function showIterate() {
+  if (iterates.length > currentStep) {
+    iterateVal.textContent = `Step ${currentStep}: ρ = ${iterates[currentStep].toFixed(8)}`;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Canvas click
+// ═══════════════════════════════════════════════════════════════════
+canvas.addEventListener('click', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  const cx = (e.clientX - rect.left) * scaleX;
+  const cy = (e.clientY - rect.top) * scaleY;
+  let [vx, vy] = fromCanvas(cx, cy);
+  vx = Math.max(0, Math.min(1, vx));
+
+  stopAnimation();
+  droppedRho = vx;
+  currentStep = 0;
+  recomputeCobweb();
+  statusText.textContent = `Point placed at ρ₀ = ${vx.toFixed(4)}. Press Step to iterate.`;
+  updateButtons();
+  showIterate();
+  draw();
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Button handlers
+// ═══════════════════════════════════════════════════════════════════
+function doStep(n) {
+  currentStep = Math.min(currentStep + n, 200);
+  showIterate();
+  draw();
+}
+
+btnStep.addEventListener('click', () => doStep(1));
+btnStep5.addEventListener('click', () => doStep(5));
+
+btnReset.addEventListener('click', () => {
+  stopAnimation();
+  droppedRho = null;
+  currentStep = 0;
+  cobweb = [];
+  iterates = [];
+  statusText.textContent = 'Click on the plot to drop a starting point on [0, 1].';
+  iterateVal.textContent = '';
+  updateButtons();
+  draw();
+});
+
+function stopAnimation() {
+  if (animId !== null) {
+    clearInterval(animId);
+    animId = null;
+  }
+  updateButtons();
+}
+
+btnAnimate.addEventListener('click', () => {
+  if (animId !== null) return;
+  animId = setInterval(() => {
+    if (currentStep >= 200) { stopAnimation(); return; }
+    doStep(1);
+  }, 300);
+  updateButtons();
+});
+
+btnStop.addEventListener('click', stopAnimation);
+
+// Presets
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const vals = JSON.parse(btn.dataset.a);
+    for (let i = 0; i < K; i++) {
+      rawA[i] = vals[i] || 0;
+      document.getElementById(`slider-${i}`).value = rawA[i];
+      document.getElementById(`val-${i}`).textContent = rawA[i].toFixed(2);
+    }
+    droppedRho = null;
+    currentStep = 0;
+    cobweb = [];
+    iterates = [];
+    statusText.textContent = 'Click on the plot to drop a starting point on [0, 1].';
+    iterateVal.textContent = '';
+    updateButtons();
+    onCoeffsChanged();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// HiDPI canvas
+// ═══════════════════════════════════════════════════════════════════
+function setupCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  // reset logical size for our coord math
+  canvas.width = 700;
+  canvas.height = 700;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Init
+// ═══════════════════════════════════════════════════════════════════
+onCoeffsChanged();
+updateButtons();
+</script>
+</body>
+</html>
