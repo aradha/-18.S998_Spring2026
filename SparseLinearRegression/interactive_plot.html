@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Basis Pursuit: Sparse Recovery Explorer</title>
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<script>
+  window.MathJax = {
+    tex: { inlineMath: [['$', '$'], ['\\(', '\\)']] },
+    svg: { fontCache: 'global' }
+  };
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #f5f5f5;
+    color: #222;
+    padding: 20px;
+  }
+  h1 { font-size: 1.4em; margin-bottom: 4px; }
+  .subtitle { font-size: 0.95em; color: #555; margin-bottom: 16px; }
+  .container { max-width: 1100px; margin: 0 auto; }
+
+  /* Tabs */
+  .tab-bar { display: flex; gap: 4px; margin-bottom: 14px; }
+  .tab {
+    padding: 10px 24px; border: none; background: #e0e0e0;
+    border-radius: 6px; cursor: pointer; font-weight: 600;
+    font-size: 0.95em; color: #666; transition: all 0.15s;
+  }
+  .tab.active { background: #555; color: #fff; }
+  .tab:hover:not(.active) { background: #ccc; }
+
+  /* Panels */
+  .panel.hidden { display: none; }
+
+  /* Controls card */
+  .controls {
+    background: #fff; border-radius: 8px; padding: 18px 24px;
+    margin-bottom: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+  .slider-row {
+    display: flex; align-items: center; gap: 14px; margin-bottom: 10px;
+  }
+  .slider-row label { font-weight: 600; min-width: 60px; }
+  .slider-row input[type=range] { flex: 1; }
+  .slider-val {
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 1.05em; min-width: 50px; text-align: right;
+  }
+
+  /* Buttons */
+  .button-row {
+    display: flex; align-items: center; gap: 14px; margin: 12px 0 8px;
+  }
+  .action-btn {
+    background: #555; color: #fff; border: none;
+    padding: 9px 22px; border-radius: 5px; cursor: pointer;
+    font-size: 0.95em; font-weight: 600; transition: background 0.15s;
+  }
+  .action-btn:hover { background: #333; }
+  .action-btn:disabled { background: #aaa; cursor: not-allowed; }
+
+  /* Status */
+  .status { font-size: 0.9em; color: #666; }
+  .status.computing { color: #e67700; }
+  .status.done { color: #2e7d32; }
+  .status.error { color: #c62828; }
+
+  /* Info & metrics */
+  .info { font-size: 0.85em; color: #666; margin-top: 8px; line-height: 1.5; }
+  .metrics { margin-top: 10px; font-size: 0.9em; line-height: 1.8; }
+  .metric-row { margin-bottom: 2px; }
+  .tag {
+    display: inline-block; padding: 1px 8px; border-radius: 3px;
+    font-size: 0.85em; font-weight: 600; margin-left: 6px;
+  }
+  .tag.success { background: #f0f0f0; color: #444; }
+  .tag.fail { background: #f0f0f0; color: #999; }
+
+  /* Plots */
+  .plot-card {
+    background: #fff; border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    margin-bottom: 14px;
+  }
+  #plot-scaling {
+    background: #fff; border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+  .plot-label {
+    font-size: 0.85em; font-weight: 600; color: #555;
+    padding: 12px 16px 0;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Basis Pursuit: Sparse Recovery Explorer</h1>
+  <p class="subtitle">
+    $\min \|w\|_1$ subject to $Xw = y$, &emsp;
+    where $y = Xw^*$, $w^*$ is $s$-sparse, $X \in \mathbb{R}^{n \times d}$ has i.i.d. $\mathcal{N}(0,1)$ entries
+  </p>
+
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab active" data-tab="scaling">Scaling Law</button>
+    <button class="tab" data-tab="coeff">Coefficient Recovery</button>
+  </div>
+
+  <!-- ═══ Scaling Law Panel ═══ -->
+  <div id="panel-scaling" class="panel">
+    <div class="controls">
+      <div class="slider-row">
+        <label>$d$:</label>
+        <input type="range" id="sl-d" min="20" max="500" step="10" value="100">
+        <span class="slider-val" id="sl-d-val">100</span>
+      </div>
+      <div class="slider-row">
+        <label>$s_{\max}$:</label>
+        <input type="range" id="sl-smax" min="2" max="50" step="1" value="15">
+        <span class="slider-val" id="sl-smax-val">15</span>
+      </div>
+      <div class="slider-row">
+        <label>Seeds:</label>
+        <input type="range" id="sl-seeds" min="3" max="20" step="1" value="5">
+        <span class="slider-val" id="sl-seeds-val">5</span>
+      </div>
+      <div class="button-row">
+        <button id="btn-compute" class="action-btn" onclick="computeScaling()">Compute Scaling Law</button>
+        <span id="sl-status" class="status"></span>
+      </div>
+      <div class="info">
+        <strong>Theory:</strong> Exact recovery via basis pursuit requires
+        $n \gtrsim C \cdot s \log(ed/s)$ Gaussian measurements.
+        The plot shows the empirical phase transition with a best-fit line through the origin.
+      </div>
+    </div>
+    <div id="plot-scaling"></div>
+  </div>
+
+  <!-- ═══ Coefficient Recovery Panel ═══ -->
+  <div id="panel-coeff" class="panel hidden">
+    <div class="controls">
+      <div class="slider-row">
+        <label>$s$:</label>
+        <input type="range" id="co-s" min="1" max="25" step="1" value="5">
+        <span class="slider-val" id="co-s-val">5</span>
+      </div>
+      <div class="slider-row">
+        <label>$d$:</label>
+        <input type="range" id="co-d" min="10" max="200" step="5" value="50">
+        <span class="slider-val" id="co-d-val">50</span>
+      </div>
+      <div class="slider-row">
+        <label>$n$:</label>
+        <input type="range" id="co-n" min="1" max="200" step="1" value="25">
+        <span class="slider-val" id="co-n-val">25</span>
+      </div>
+      <div class="slider-row">
+        <label>Seed:</label>
+        <input type="range" id="co-seed" min="0" max="99" step="1" value="42">
+        <span class="slider-val" id="co-seed-val">42</span>
+      </div>
+      <div class="button-row">
+        <button id="btn-solve" class="action-btn" onclick="solveCoeffs()">Solve</button>
+        <span id="co-status" class="status"></span>
+      </div>
+      <div id="co-info" class="info">
+        Theoretical threshold: $n \approx 2\,s\log(ed/s)$ =
+        <strong id="co-threshold"></strong> samples.
+        The $\ell_1$ solution recovers $w^*$ when $n$ exceeds this; the $\ell_2$ solution does not.
+      </div>
+      <div id="co-metrics" class="metrics"></div>
+    </div>
+    <div class="plot-card">
+      <div class="plot-label">$\ell_1$ minimization (basis pursuit)</div>
+      <div id="plot-coeff-l1"></div>
+    </div>
+    <div class="plot-card">
+      <div class="plot-label">$\ell_2$ minimization (min norm)</div>
+      <div id="plot-coeff-l2"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── Tab switching ── */
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.querySelectorAll('.panel').forEach(p => {
+      p.classList.toggle('hidden', p.id !== 'panel-' + tab.dataset.tab);
+    });
+    window.dispatchEvent(new Event('resize'));
+  });
+});
+
+/* ── Slider value display ── */
+function bindSlider(id) {
+  const el = document.getElementById(id);
+  const val = document.getElementById(id + '-val');
+  el.addEventListener('input', () => { val.textContent = el.value; });
+}
+['sl-d', 'sl-smax', 'sl-seeds', 'co-s', 'co-d', 'co-n', 'co-seed'].forEach(bindSlider);
+
+/* ── Dynamic range clamping ── */
+// Scaling law: clamp s_max <= d/2
+document.getElementById('sl-d').addEventListener('input', () => {
+  const d = parseInt(document.getElementById('sl-d').value);
+  const sm = document.getElementById('sl-smax');
+  const maxS = Math.floor(d / 2);
+  sm.max = maxS;
+  if (parseInt(sm.value) > maxS) {
+    sm.value = maxS;
+    document.getElementById('sl-smax-val').textContent = maxS;
+  }
+});
+
+// Coefficient: clamp s <= d/2, n <= d
+document.getElementById('co-d').addEventListener('input', () => {
+  const d = parseInt(document.getElementById('co-d').value);
+  const sEl = document.getElementById('co-s');
+  const nEl = document.getElementById('co-n');
+  const maxS = Math.floor(d / 2);
+  sEl.max = maxS;
+  if (parseInt(sEl.value) > maxS) {
+    sEl.value = maxS;
+    document.getElementById('co-s-val').textContent = maxS;
+  }
+  nEl.max = d;
+  if (parseInt(nEl.value) > d) {
+    nEl.value = d;
+    document.getElementById('co-n-val').textContent = d;
+  }
+  updateThreshold();
+});
+
+/* ── Threshold display ── */
+function updateThreshold() {
+  const s = parseInt(document.getElementById('co-s').value);
+  const d = parseInt(document.getElementById('co-d').value);
+  const thr = Math.round(2 * s * Math.log(Math.E * d / s));
+  document.getElementById('co-threshold').textContent = thr;
+}
+['co-s', 'co-d'].forEach(id => {
+  document.getElementById(id).addEventListener('input', updateThreshold);
+});
+updateThreshold();
+
+/* ══════════════════════════════════════════════════════════════════════
+   Scaling Law
+   ══════════════════════════════════════════════════════════════════════ */
+async function computeScaling() {
+  const btn = document.getElementById('btn-compute');
+  const status = document.getElementById('sl-status');
+  btn.disabled = true;
+  status.textContent = 'Computing... (this may take a minute)';
+  status.className = 'status computing';
+
+  const d = parseInt(document.getElementById('sl-d').value);
+  const s_max = parseInt(document.getElementById('sl-smax').value);
+  const num_seeds = parseInt(document.getElementById('sl-seeds').value);
+
+  try {
+    const resp = await fetch('/api/scaling_law', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({d, s_max, num_seeds})
+    });
+    const data = await resp.json();
+
+    const x = data.map(r => r.x_val);
+    const y = data.map(r => r.n_min);
+    const labels = data.map(r => 's=' + r.s);
+
+    // Fit n = C * s*log(ed/s) through origin via least squares
+    const C = x.reduce((acc, xi, i) => acc + xi * y[i], 0) /
+              x.reduce((acc, xi) => acc + xi * xi, 0);
+    const xMax = Math.max(...x) * 1.1;
+
+    const showText = data.length <= 15;
+
+    Plotly.react('plot-scaling', [
+      {
+        x, y, text: labels,
+        mode: showText ? 'markers+text' : 'markers',
+        textposition: 'top center',
+        textfont: {size: 10, color: '#666'},
+        name: 'Empirical n_min',
+        marker: {size: 10, color: '#444'},
+        hovertemplate: '%{text}<br>n_min = %{y}<br>s log(ed/s) = %{x:.1f}<extra></extra>'
+      },
+      {
+        x: [0, xMax], y: [0, C * xMax],
+        mode: 'lines',
+        name: 'Fit: n = ' + C.toFixed(2) + ' s log(ed/s)',
+        line: {color: '#999', dash: 'dash', width: 2}
+      }
+    ], {
+      margin: {t: 30, r: 30, b: 60, l: 70},
+      height: 520,
+      xaxis: {title: '$s \\log(ed/s)$', rangemode: 'tozero'},
+      yaxis: {title: '$n_{\\min}$ for exact recovery', rangemode: 'tozero'},
+      legend: {x: 0.02, y: 0.98, bgcolor: 'rgba(255,255,255,0.85)'},
+      hovermode: 'closest'
+    });
+
+    status.textContent = 'Done (d=' + d + ', fitted slope C = ' + C.toFixed(2) + ')';
+    status.className = 'status done';
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+    status.className = 'status error';
+  }
+  btn.disabled = false;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   Coefficient Recovery
+   ══════════════════════════════════════════════════════════════════════ */
+async function solveCoeffs() {
+  const btn = document.getElementById('btn-solve');
+  const status = document.getElementById('co-status');
+  btn.disabled = true;
+  status.textContent = 'Solving...';
+  status.className = 'status computing';
+
+  const s = parseInt(document.getElementById('co-s').value);
+  const d = parseInt(document.getElementById('co-d').value);
+  const n = parseInt(document.getElementById('co-n').value);
+  const seed = parseInt(document.getElementById('co-seed').value);
+
+  try {
+    const resp = await fetch('/api/solve', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({n, d, s, seed})
+    });
+    const data = await resp.json();
+
+    const coords = Array.from({length: d}, (_, i) => i + 1);
+
+    // Shared layout settings
+    const baseLayout = {
+      margin: {t: 8, r: 30, b: 40, l: 60},
+      height: 280,
+      barmode: 'overlay',
+      xaxis: {title: 'Coordinate index', gridcolor: '#eee', zeroline: false},
+      yaxis: {title: 'Value', gridcolor: '#eee', zeroline: true, zerolinecolor: '#ccc'},
+      legend: {x: 0.98, y: 0.98, xanchor: 'right',
+               bgcolor: 'rgba(255,255,255,0.9)',
+               font: {size: 11}},
+      hovermode: 'closest',
+      bargap: 0.25,
+      plot_bgcolor: '#fff',
+      paper_bgcolor: '#fff',
+    };
+
+    // ── L1 subplot ──
+    const l1Traces = [
+      {
+        x: coords, y: data.w_star, type: 'bar',
+        name: 'w*',
+        marker: {color: '#bbb', line: {width: 0}},
+        opacity: 0.6
+      }
+    ];
+    if (data.w_l1) {
+      l1Traces.push({
+        x: coords, y: data.w_l1, type: 'bar',
+        name: 'w&#x302; (L1)',
+        marker: {color: '#333', line: {width: 0}},
+        opacity: 0.75
+      });
+    }
+    Plotly.react('plot-coeff-l1', l1Traces, baseLayout);
+
+    // ── L2 subplot ──
+    const l2Traces = [
+      {
+        x: coords, y: data.w_star, type: 'bar',
+        name: 'w*',
+        marker: {color: '#bbb', line: {width: 0}},
+        opacity: 0.6
+      },
+      {
+        x: coords, y: data.w_l2, type: 'bar',
+        name: 'w&#x302; (L2)',
+        marker: {color: '#333', line: {width: 0}},
+        opacity: 0.75
+      }
+    ];
+    Plotly.react('plot-coeff-l2', l2Traces, baseLayout);
+
+    // Metrics
+    const metrics = document.getElementById('co-metrics');
+    const threshold = Math.round(2 * s * Math.log(Math.E * d / s));
+    let html = '';
+
+    if (data.l1_error !== undefined && data.l1_error !== null) {
+      const exact = data.l1_rel_error < 1e-3;
+      html += '<div class="metric-row">';
+      html += '<strong>L1:</strong> ';
+      html += '||w&#x302; - w*|| = ' + data.l1_error.toExponential(2);
+      html += exact
+        ? '  <span class="tag success">Exact recovery</span>'
+        : '  <span class="tag fail">Not recovered</span>';
+      html += '</div>';
+    } else {
+      html += '<div class="metric-row"><strong>L1:</strong> Solver failed</div>';
+    }
+
+    html += '<div class="metric-row">';
+    html += '<strong>L2:</strong> ';
+    html += '||w&#x302; - w*|| = ' + data.l2_error.toExponential(2);
+    const l2exact = data.l2_rel_error < 1e-3;
+    html += l2exact
+      ? '  <span class="tag success">Exact recovery</span>'
+      : '  <span class="tag fail">Not recovered</span>';
+    html += '</div>';
+
+    html += '<div class="metric-row" style="color:#999; font-size:0.85em; margin-top:4px">';
+    html += 'Threshold n = 2s log(ed/s) = ' + threshold;
+    html += n >= threshold
+      ? ' &mdash; current n=' + n + ' is above threshold'
+      : ' &mdash; current n=' + n + ' is below threshold';
+    html += '</div>';
+
+    metrics.innerHTML = html;
+    status.textContent = '';
+    status.className = 'status';
+  } catch (e) {
+    status.textContent = 'Error: ' + e.message;
+    status.className = 'status error';
+  }
+  btn.disabled = false;
+}
+
+/* ── Initialize empty plots ── */
+const emptyAnnotation = (msg) => [{
+  text: msg, xref: 'paper', yref: 'paper',
+  x: 0.5, y: 0.5, showarrow: false,
+  font: {size: 16, color: '#aaa'}
+}];
+
+Plotly.newPlot('plot-scaling', [], {
+  margin: {t: 30, r: 30, b: 60, l: 70}, height: 520,
+  xaxis: {title: '$s \\log(ed/s)$', gridcolor: '#eee'},
+  yaxis: {title: '$n_{\\min}$', gridcolor: '#eee'},
+  plot_bgcolor: '#fff', paper_bgcolor: '#fff',
+  annotations: emptyAnnotation('Click "Compute Scaling Law" to generate data')
+}, {responsive: true});
+
+const emptyCoeffLayout = {
+  margin: {t: 8, r: 30, b: 40, l: 60}, height: 280,
+  barmode: 'overlay',
+  xaxis: {title: 'Coordinate index', gridcolor: '#eee'},
+  yaxis: {title: 'Value', gridcolor: '#eee'},
+  plot_bgcolor: '#fff', paper_bgcolor: '#fff',
+  annotations: emptyAnnotation('Click "Solve" to generate')
+};
+Plotly.newPlot('plot-coeff-l1', [], emptyCoeffLayout, {responsive: true});
+Plotly.newPlot('plot-coeff-l2', [], emptyCoeffLayout, {responsive: true});
+</script>
+</body>
+</html>
